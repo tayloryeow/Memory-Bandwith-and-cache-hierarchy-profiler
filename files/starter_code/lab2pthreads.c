@@ -30,7 +30,10 @@ int32_t threads;
 // the array "weights", writing the result to "results".
 void scale_sequential()
 {
-}
+    for(int i = 0; i < n; i++){
+        result[i] = input[i] * weights[i];
+    }
+}   
 
 // Parallel sharded implementation of the array "input" with 
 // the array "weights", writing the result to "results".
@@ -40,6 +43,14 @@ void* scale_parallel_sharded(void *val)
      * You should treat val as a pointer
      * to an integer representing the id of the thread.
      */
+     
+    int offset = (*(int *)val) * (n/threads); 
+
+    //Loop through a n/num thread portion of the matrixes
+    for (int i = offset; i < n/threads; i++){
+
+        result[i] = input[i] * weights[i];
+    }
     return NULL;
 }
 
@@ -51,6 +62,11 @@ void* scale_parallel_strided(void *val)
      * You should treat val as a pointer
      * to an integer representing the id of the thread.
      */
+    int id = (*(int *)val); 
+
+    for (int i = id; i < n; i += id){
+        result[i] = input[i] * weights[i];
+    }
     return NULL;
 }
 
@@ -76,6 +92,20 @@ void start_parallel(int mode)
      * Don't forget to wait for all the threads to finish before
      * returning from this function (hint: look at pthread_join()).
      */
+
+
+
+    int ids[threads];
+    pthread_t workers[threads];
+
+    for (int i = 0; i < threads; i++){
+        ids[i] = i;
+        pthread_create(&workers[i], NULL, scale_parallel_sharded, &ids[i]);
+    }
+
+    for (int i = 0; i < threads; i++){
+        ids[i] = pthread_join(&workers[i], NULL);
+    }
 }
 
 //Don't touch this function
