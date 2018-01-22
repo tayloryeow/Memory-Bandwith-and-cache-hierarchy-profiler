@@ -1,5 +1,5 @@
-/* ------------
- * This code is provided solely for the personal and private use of 
+ /* 
+  * This code is provided solely for the personal and private use of 
  * students taking the CSC367H1 course at the University of Toronto.
  * Copying for purposes other than this use is expressly prohibited. 
  * All forms of distribution of this code, whether as given or with 
@@ -17,12 +17,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdint.h>
 
 float *input;
 float *weights;
 float *result;
 int32_t n;
 int32_t threads;
+
+#define BILLION 1000000000L
 
 //Implement the next 4 functions.
 
@@ -46,6 +49,7 @@ void* scale_parallel_sharded(void *val)
      
     int offset = (*(int *)val) * (n/threads); 
 
+
     //Loop through a n/num thread portion of the matrixes
     for (int i = offset; i < n/threads; i++){
 
@@ -64,7 +68,7 @@ void* scale_parallel_strided(void *val)
      */
     int id = (*(int *)val); 
 
-    for (int i = id; i < n; i += id){
+    for (int i = id; i < n; i += threads){
         result[i] = input[i] * weights[i];
     }
     return NULL;
@@ -100,11 +104,18 @@ void start_parallel(int mode)
 
     for (int i = 0; i < threads; i++){
         ids[i] = i;
-        pthread_create(&workers[i], NULL, scale_parallel_sharded, &ids[i]);
+
+        if (mode == SHARDED){
+            pthread_create(&workers[i], NULL, scale_parallel_sharded, &ids[i]);
+        }
+        else{
+            pthread_create(&workers[i], NULL, scale_parallel_strided, &ids[i]);
+        }
+
     }
 
     for (int i = 0; i < threads; i++){
-        ids[i] = pthread_join(&workers[i], NULL);
+        ids[i] = pthread_join(workers[i], NULL);
     }
 }
 
@@ -186,22 +197,67 @@ int main(int argc, char **argv)
 
     /**************** Change the code below **********************/
 
+    struct timespec start,stop;
+    
     {
         //call your sequential function here
         //and time it. Do not include the line
         //below in the measurement.
+        
+        if (clock_gettime(CLOCK_MONOTONIC, &start) == -1) {
+            perror("clock gettime");
+            exit( EXIT_FAILURE );
+        }
+        scale_sequential();
+        if (clock_gettime(CLOCK_MONOTONIC, &stop) == -1) {
+            perror("clock gettime");
+            exit( EXIT_FAILURE );
+        }
+        uint64_t diff = BILLION * (stop.tv_sec - start.tv_sec) + stop.tv_nsec - start.tv_nsec;
+        printf("Seqential Time         : %10ld (nano seconds) \n", diff);
         dump_output_to_file(result, n, "sequential_output.txt");
     }
+    
+    
     {
         //call your start_parallel function here on strided mode
         //and time it. Do not include the line
         //below in the measurement.
+        if (clock_gettime(CLOCK_MONOTONIC, &start) == -1) {
+            perror("clock gettime");
+            exit( EXIT_FAILURE );
+        }
+        start_parallel(STRIDED);
+        if (clock_gettime(CLOCK_MONOTONIC, &stop) == -1) {
+            perror("clock gettime");
+            exit( EXIT_FAILURE );
+        }   
+        uint64_t diff = BILLION * (stop.tv_sec - start.tv_sec) + stop.tv_nsec - start.tv_nsec;
+        printf("Parallel STRIDED time  : %10ld (nano seconds) \n", diff);
+
+
         dump_output_to_file(result, n, "strided_output.txt");
     }
+    
+    
     {
         //call your start_parallel function here on sharded mode
         //and time it. Do not include the line
         //below in the measurement.
+        if (clock_gettime(CLOCK_MONOTONIC, &start) == -1) {
+            perror("clock gettime");
+            exit( EXIT_FAILURE );
+        }
+        start_parallel(SHARDED);
+        if (clock_gettime(CLOCK_MONOTONIC, &stop) == -1) {
+            perror("clock gettime");
+            exit( EXIT_FAILURE );
+        }   
+        uint64_t diff = BILLION * (stop.tv_sec - start.tv_sec) + stop.tv_nsec - start.tv_nsec;
+        printf("Parallel SHARDED time  : %10ld (nano seconds) \n", diff);
+
+
+
         dump_output_to_file(result, n, "sharded_output.txt");
     }
 }
