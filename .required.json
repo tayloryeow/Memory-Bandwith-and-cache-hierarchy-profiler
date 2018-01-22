@@ -1,0 +1,1 @@
+{"Lab1":{"required":["lab1.c","lab1-opt.c","Makefile","time_util.h"],"required_only":false},"Lab2":{"required":["lab2pthreads.c","Makefile"],"required_only":false},"A1":{"required":["INFO.txt","plagiarism.txt"],"required_only":false}}
