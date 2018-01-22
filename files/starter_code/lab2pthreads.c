@@ -214,7 +214,7 @@ int main(int argc, char **argv)
             exit( EXIT_FAILURE );
         }
         uint64_t diff = BILLION * (stop.tv_sec - start.tv_sec) + stop.tv_nsec - start.tv_nsec;
-        printf("Sequential Time = %0.10f\n", (double) diff/BILLION);
+        printf("sequential Time = %0.10f\n", (double) diff/BILLION);
         dump_output_to_file(result, n, "sequential_output.txt");
     }
     
