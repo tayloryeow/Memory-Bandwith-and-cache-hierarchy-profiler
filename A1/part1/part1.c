@@ -1,35 +1,51 @@
+#define _GNU_SOURCE
 
 #include <sched.h>
 #include <stdio.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/sysinfo.h>
+#include "time_util.h"
 
 #define BILLION 1000000000L
 
-static  
-
+int bad_function(){
+	int x[BILLION] = {};
+	x[0] = 2;
+	for (int i = 1; i < BILLION; i++){
+		x[i] = x[i - 1] * x[i - 1];
+    }
+	return 0;
+}
 
 //Simple dummy testing function for dev purposes
-int dummy_function (){
-    for (int i = 0; i < BILLION; i++);
+int dummy_function (int dataSize){
+    unsigned int x[dataSize];
+	int total = 0;
+	for (int i = 0; i < dataSize; i++){
+        x[i] = i;
+		total = x[i];
+	    
+	}
+	return total;
 }
 
 int main (int argc, char **argv){
 	char *test_name = argv[1];
-	char *filePath = argv[3];
+	char filePath[160] = "data/";	
+	strcat(filePath, test_name);
 	int numberSamples = atoi(argv[2]);
+	int dataSize = atoi(argv[3]);//Number of bytes to test
 	struct timespec start, stop;
 
 	FILE *frec = NULL;
 
 	//Checks number of arguments from 2 to 3
-    if (argc < 3){
-			printf("Usage: %s test_name, number_samples <output_file>\n", argv[0]);
+    if (argc < 4){
+			printf("Usage: %s test_name, number_samples <output_file> dataSize\n", argv[0]);
 			exit(1);
 	}
  
@@ -55,7 +71,7 @@ int main (int argc, char **argv){
 	    filePath = &def_path;	
 	} */ 
     printf("filepath: %s\n", filePath); 
-	frec = fopen(filePath, "a+"); 
+	frec = fopen(filePath, "w+"); 
 	if (frec == NULL){
 		perror("Bad File path");
 		exit(1);
@@ -63,6 +79,7 @@ int main (int argc, char **argv){
 
     //Determine PC Hash/ID
     int pcId = 0;
+	enum TESTS {DUMMY, BAD} function = DUMMY; 
     printf("Beginning experiments++++++++++++++++++++++++++++++++++++++++\n");
     for (int sampleNumber = 0; sampleNumber < numberSamples; sampleNumber++){
     	if (clock_gettime(CLOCK_MONOTONIC, &start) == -1) {
@@ -71,14 +88,23 @@ int main (int argc, char **argv){
 		}
 
 	    //Call Testing Function - 
-		dummy_function();	
+		switch (function){
+			case DUMMY:
+		    	dummy_function(dataSize);
+				printf("dummy_function\n");	
+				break;
+			case BAD:
+				bad_function();
+				break;
+		}	
 	
 		if (clock_gettime(CLOCK_MONOTONIC, &stop) == -1) {
         	perror("clock gettime stop");
 			exit(EXIT_FAILURE);
 		}
 
-    	uint64_t nsecs = difftimespec();
+    	struct timespec diff = difftimespec(stop, start);
+		long int msec = timespec_to_nsec(diff);
 
     
     	//Writing to file section
@@ -87,8 +113,8 @@ int main (int argc, char **argv){
 			case INTERVAL:
 				break;
 			case DIFFERENCE:
-	        	fprintf(frec, "%d %ld\n", pcId, nsecs); 
-				printf("Experiment number %d: Took %ld\n", sampleNumber, nsecs);
+	        	fprintf(frec, "%d %d %d %ld\n", pcId, function, dataSize, msec); 
+				printf("Experiment number %d: Took %ld to write %d\n", sampleNumber, msec, dataSize);
      			break;		
 		}
     }
@@ -96,3 +122,4 @@ int main (int argc, char **argv){
 
 	return 0;
 }
+

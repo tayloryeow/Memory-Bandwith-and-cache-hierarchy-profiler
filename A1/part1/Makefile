@@ -1,27 +1,33 @@
-CFLAGS = "-o -ftrapv -Wall"
+CFLAGS += -std=gnu11 -Wall -Werror -g3 -O3 -DNDEBUG
 HEADERS = ''
-CC = "gcc"
+CC = gcc
 
-TEST="default"
-NUM_SAMPLES=10
-F_PATH='data/'$(TEST)
+TEST=default
+N=10
+F_PATH=data/$(TEST)
+SIZE=1024
 
-all: part1.o
-	$(CC) -o tester part1.o
+all: usage part1 
+	
+part1: part1.o
+	$(CC) $^ -o tester
 
-test:  
+%.o: %.c $(HEADERS)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+test: usage 
 	echo "running test"
-	./tester $(TEST) $(NUM_SAMPLES) $(F_PATH) 
-graph:
+	./tester $(TEST) $(N) $(F_PATH) $(SIZE)
+graph: usage 
 	echo "Graphing..."
 	python2 graph.py $(TEST) 
 	xdg-open examples/charts/$(TEST).svg
 
-testGraph: test graph
+testGraph: usage part1.o test graph
 
+usage:
+	echo "TEST:" $(TEST) "NUM_SAMPLES:" $(N) "F_PATH:" $(F_PATH) "SIZE:" $(SIZE)
 
-%.o: %.c $(HEADERS)
-	$(CC) -c $@ $< $(CFLAGS)
 
 clean:
 	rm *.o

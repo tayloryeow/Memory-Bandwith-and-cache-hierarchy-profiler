@@ -15,7 +15,7 @@ i = 0;
 f = open('data/'+ args.testName, 'r')
 dot_data = []
 for line in f:
-    dot_data.append((int(i), (map(int, line.split(' '))[1])))
+    dot_data.append((int(i), (map(int, line.split(' '))[3])))
     print dot_data[-1]
     i+= 1
 print dot_data
