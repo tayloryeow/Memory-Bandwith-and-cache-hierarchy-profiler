@@ -4,7 +4,7 @@ CC = "gcc"
 
 TEST="default"
 NUM_SAMPLES=10
-F_PATH="data/"$(TEST)
+F_PATH='data/'$(TEST)
 
 all: part1.o
 	$(CC) -o tester part1.o
@@ -17,6 +17,7 @@ graph:
 	python2 graph.py $(TEST) 
 	xdg-open examples/charts/$(TEST).svg
 
+testGraph: test graph
 
 
 %.o: %.c $(HEADERS)
