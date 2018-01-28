@@ -1,12 +1,18 @@
 
+#include <sched.h>
 #include <stdio.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <sys/sysinfo.h>
 
 #define BILLION 1000000000L
+
+static  
+
 
 //Simple dummy testing function for dev purposes
 int dummy_function (){
@@ -26,6 +32,18 @@ int main (int argc, char **argv){
 			printf("Usage: %s test_name, number_samples <output_file>\n", argv[0]);
 			exit(1);
 	}
+ 
+
+	// Pin the thread to a single CPU to minimize effects of scheduling
+	// Don't use CPU #0 if possible, it tends to be busier with servicing interrupts
+	srandom(time(NULL));
+	cpu_set_t set;
+	CPU_ZERO(&set);
+	CPU_SET((random() ?: 1) % get_nprocs(), &set);
+	if (sched_setaffinity(getpid(), sizeof(set), &set) != 0){
+			perror("sched_setaffinity");
+			return 1;
+	}
 /*	
 	if (argc == 2){
 		char def_path[256] = "data/";
@@ -35,7 +53,7 @@ int main (int argc, char **argv){
 		}	   
         strncpy(def_path, test_name, 250);
 	    filePath = &def_path;	
-	} */  
+	} */ 
     printf("filepath: %s\n", filePath); 
 	frec = fopen(filePath, "a+"); 
 	if (frec == NULL){
@@ -60,8 +78,8 @@ int main (int argc, char **argv){
 			exit(EXIT_FAILURE);
 		}
 
-    	uint64_t nsecs = (BILLION * (stop.tv_sec  -start.tv_sec)) + 
-				                   (stop.tv_nsec -start.tv_nsec); 
+    	uint64_t nsecs = difftimespec();
+
     
     	//Writing to file section
     	enum mode {DIFFERENCE, INTERVAL} m = DIFFERENCE;
