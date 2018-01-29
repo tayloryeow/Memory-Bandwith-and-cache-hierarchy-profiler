@@ -9,40 +9,25 @@
 #include <unistd.h>
 #include <sys/sysinfo.h>
 #include "time_util.h"
+#include "part1.h"
 
 #define BILLION 1000000000L
 
-int bad_function(){
-	int x[BILLION] = {};
-	x[0] = 2;
-	for (int i = 1; i < BILLION; i++){
-		x[i] = x[i - 1] * x[i - 1];
-    }
-	return 0;
-}
 
-//Simple dummy testing function for dev purposes
-int dummy_function (int dataSize){
-    unsigned int x[dataSize];
-	int total = 0;
-	for (int i = 0; i < dataSize; i++){
-        x[i] = i;
-		total = x[i];
-	    
-	}
-	return total;
-}
 
 int main (int argc, char **argv){
 	char *test_name = argv[1];
 	char filePath[160] = "data/";	
 	strcat(filePath, test_name);
+	
 	int numberSamples = atoi(argv[2]);
 	int dataSize = atoi(argv[3]);//Number of bytes to test
-	struct timespec start, stop;
+	int algorithmn;
+	struct timespec start, stop; 
+
 
 	FILE *frec = NULL;
-
+    algorithmn = algorithmn_enum(argv[4]);
 	//Checks number of arguments from 2 to 3
     if (argc < 4){
 			printf("Usage: %s test_name, number_samples <output_file> dataSize\n", argv[0]);
@@ -79,7 +64,7 @@ int main (int argc, char **argv){
 
     //Determine PC Hash/ID
     int pcId = 0;
-	enum TESTS {DUMMY, BAD} function = DUMMY; 
+	
     printf("Beginning experiments++++++++++++++++++++++++++++++++++++++++\n");
     for (int sampleNumber = 0; sampleNumber < numberSamples; sampleNumber++){
     	if (clock_gettime(CLOCK_MONOTONIC, &start) == -1) {
@@ -88,10 +73,9 @@ int main (int argc, char **argv){
 		}
 
 	    //Call Testing Function - 
-		switch (function){
+		switch (algorithmn){
 			case DUMMY:
 		    	dummy_function(dataSize);
-				printf("dummy_function\n");	
 				break;
 			case BAD:
 				bad_function();
@@ -106,14 +90,14 @@ int main (int argc, char **argv){
     	struct timespec diff = difftimespec(stop, start);
 		long int msec = timespec_to_nsec(diff);
 
-    
+	
     	//Writing to file section
     	enum mode {DIFFERENCE, INTERVAL} m = DIFFERENCE;
 		switch (m){
 			case INTERVAL:
 				break;
 			case DIFFERENCE:
-	        	fprintf(frec, "%d %d %d %ld\n", pcId, function, dataSize, msec); 
+	        	fprintf(frec, "%d %d %d %ld\n", pcId, algorithmn, dataSize, msec); 
 				printf("Experiment number %d: Took %ld to write %d\n", sampleNumber, msec, dataSize);
      			break;		
 		}
@@ -123,3 +107,48 @@ int main (int argc, char **argv){
 	return 0;
 }
 
+int poor_locality(int dataSize){
+    unsigned int x[dataSize];
+    int remainingData = dataSize;
+    int i = 0;
+	while(remainingData > 0){
+		x[i] = (int) -1;
+		remainingData--;
+
+		i += i * (dataSize/remainingData);
+		i = i % dataSize;
+	}
+	return x[i];
+}
+
+int bad_function(){
+	int x[BILLION] = {};
+	x[0] = 2;
+	for (int i = 1; i < BILLION; i++){
+		x[i] = x[i - 1] * x[i - 1];
+    }
+	return 0;
+}
+
+//Simple dummy testing function for dev purposes
+int dummy_function (int dataSize){
+    unsigned int x[dataSize];
+	int total = 0;
+	for (int i = 0; i < dataSize; i++){
+        x[i] = i;
+		total = x[i];
+	    
+	}
+	return total;
+}
+
+//Converts a argument string into an enum
+int algorithmn_enum(char *arg){
+    if (strcmp("DUMMY", arg)){
+			return DUMMY;
+	}
+	else if (strcmp("BAD", arg)){
+			return BAD;
+	}
+	return -1;
+}

@@ -22,7 +22,10 @@ print dot_data
 f.close()
 
 chart = leather.Chart('Charts: '+ args.testName)
+chart.add_y_axis(name="nanoseconds")
+chart.add_x_axis(name='Sample Number');
 chart.add_line(dot_data)
 chart.to_svg('examples/charts/'+ args.testName +'.svg')
+
 print "Printed file to " + "examples/charts" + args.testName + ".svg"
 

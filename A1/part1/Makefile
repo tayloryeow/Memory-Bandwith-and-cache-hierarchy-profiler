@@ -2,10 +2,10 @@ CFLAGS += -std=gnu11 -Wall -Werror -g3 -O3 -DNDEBUG
 HEADERS = ''
 CC = gcc
 
-TEST=default
 N=10
 F_PATH=data/$(TEST)
 SIZE=1024
+TEST=$(SIZE)Bx$(N)n
 
 all: usage part1 
 	
