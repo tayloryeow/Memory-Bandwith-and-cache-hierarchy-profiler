@@ -6,6 +6,7 @@ N=10
 F_PATH=data/$(TEST)
 SIZE=1024
 TEST=$(SIZE)Bx$(N)n
+ALG=DUMMY
 
 all: usage part1 
 	
@@ -17,7 +18,7 @@ part1: part1.o
 
 test: usage 
 	echo "running test"
-	./tester $(TEST) $(N) $(F_PATH) $(SIZE)
+	./tester $(TEST) $(N) $(F_PATH) $(SIZE) $(ALG)
 graph: usage 
 	echo "Graphing..."
 	python2 graph.py $(TEST) 
