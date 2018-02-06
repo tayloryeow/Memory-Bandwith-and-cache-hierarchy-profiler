@@ -49,8 +49,7 @@ void cut(int barber, int customer)
     *   cut_time = 1.3 * num_barbers * arrival_average;
     * We multiply it by 2 so that we get the desired result 
     * on average.
-    */
-	system("clear");  
+    */	
     printf("Barber %d serving customer %d\n", barber, customer);
 	usleep(rand() % (int) (1.3 * num_barbers * arrival_average * 2)); 
 }
@@ -70,27 +69,28 @@ void* barber_mainloop(void *args)
 
 	int running = 1;
 	while (running){
-
-		printf("Lock\n");
 		//Someone is in the waiting room
 		if (in_waiting_room > 0){
-		    //Start if critical section
+		    //Start of critical section
 			pthread_mutex_lock(&mutex);
-			int customer = waiting_room[first];
-			first = (first + 1) % waiting_room_capacity;
+            
+			//Adjust meta data of the barber problem
 			in_waiting_room--;
-			customers_served++;
+			customers_served++;	
+			first = (first + 1) % waiting_room_capacity; //Circular buffer wrapping
 			
+			//keep a copy of the customer id
+			int customer = waiting_room[first];
 
 			pthread_mutex_unlock(&mutex);
 			//End of critical section
 			cut(id, customer);
 		}
-		//There will never be more people in the loop
+		//The waiting room is empty and all customers for the day have left 
+		//or been processed
 		else if (customers_served + customers_angry >= total_customers){
 			running = 0;
 		}
-		printf("Unlock\n");
 	}
 	return NULL;
 }
