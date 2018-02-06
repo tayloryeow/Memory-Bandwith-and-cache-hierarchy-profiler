@@ -68,28 +68,35 @@ void* barber_mainloop(void *args)
      */
 
 	int running = 1;
+	int customer = -1;
 	while (running){
+
+		//Start of the Critical Section	
+		pthread_mutex_lock(&mutex);
+
 		//Someone is in the waiting room
 		if (in_waiting_room > 0){
-		    //Start of critical section
-			pthread_mutex_lock(&mutex);
-            
+			//keep a copy of the customer id
+			customer = waiting_room[first];
+			
 			//Adjust meta data of the barber problem
 			in_waiting_room--;
 			customers_served++;	
-			first = (first + 1) % waiting_room_capacity; //Circular buffer wrapping
-			
-			//keep a copy of the customer id
-			int customer = waiting_room[first];
-
-			pthread_mutex_unlock(&mutex);
-			//End of critical section
-			cut(id, customer);
+			//Circular buffer wrapping
+			first = (first + 1) % waiting_room_capacity; 
 		}
 		//The waiting room is empty and all customers for the day have left 
 		//or been processed
 		else if (customers_served + customers_angry >= total_customers){
 			running = 0;
+		}	
+		pthread_mutex_unlock(&mutex);
+		//End of Critical Section
+
+		//Cut the customers hair
+		if (customer != -1){
+			cut(id, customer);
+			customer = -1;
 		}
 	}
 	return NULL;
