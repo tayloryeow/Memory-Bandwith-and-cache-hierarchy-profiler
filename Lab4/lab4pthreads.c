@@ -1,4 +1,4 @@
-/* ------------
+/*-----------
  * This code is provided solely for the personal and private use of 
  * students taking the CSC367H1 course at the University of Toronto.
  * Copying for purposes other than this use is expressly prohibited. 
@@ -17,6 +17,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+
+#define DEBUG TRUE
 
 int num_barbers; //command line argument
 int total_customers; //command line argument
@@ -44,14 +46,13 @@ void cut(int barber, int customer)
     * slightly faster than the speed in which the whole barbershop can
     * serve them, for example:
     *   arrival_speed = 1.3 * serving_speed
-    *   1 / arrival_average  = 1.3 * num_barbers / cut_time
-    * So the time to serve one costumer should be:
     *   cut_time = 1.3 * num_barbers * arrival_average;
     * We multiply it by 2 so that we get the desired result 
     * on average.
     */
+	system("clear");  
     printf("Barber %d serving customer %d\n", barber, customer);
-    usleep(rand() % (int) (1.3 * num_barbers * arrival_average * 2)); 
+	usleep(rand() % (int) (1.3 * num_barbers * arrival_average * 2)); 
 }
 
 void* barber_mainloop(void *args)
@@ -66,6 +67,32 @@ void* barber_mainloop(void *args)
      *  3- If the waiting room is empty and ALL customers have arrived for the day,
      *      the barber goes home (exits).
      */
+
+	int running = 1;
+	while (running){
+
+		printf("Lock\n");
+		//Someone is in the waiting room
+		if (in_waiting_room > 0){
+		    //Start if critical section
+			pthread_mutex_lock(&mutex);
+			int customer = waiting_room[first];
+			first = (first + 1) % waiting_room_capacity;
+			in_waiting_room--;
+			customers_served++;
+			
+
+			pthread_mutex_unlock(&mutex);
+			//End of critical section
+			cut(id, customer);
+		}
+		//There will never be more people in the loop
+		else if (customers_served + customers_angry >= total_customers){
+			running = 0;
+		}
+		printf("Unlock\n");
+	}
+	return NULL;
 }
 
 /* DO NOT MODIFY ANYTHING BELOW THIS POINT */
@@ -90,7 +117,6 @@ void customers_mainloop()
             last = (last+1) % waiting_room_capacity;
             in_waiting_room++;
         }
-
         pthread_mutex_unlock(&mutex);
     }
 }
