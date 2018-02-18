@@ -16,6 +16,10 @@
 #define __FILTERS__H
 
 #include <stdint.h>
+#include <pthread.h>
+
+
+
 
 /**************FILTER STRUCT DEFINITIONS*****************/
 /* Filters are square matrices with odd dimension.
@@ -25,6 +29,8 @@ typedef struct filter_t
     int32_t dimension;
     int8_t *matrix;
 } filter;
+
+
 
 /* Filter constants */
 #define NUM_FILTERS 4
@@ -80,4 +86,27 @@ void apply_filter2d_threaded(const filter *f,
         int32_t width, int32_t height,
         int32_t num_threads, parallel_method method,
         int32_t work_chunk);
+
+typedef struct common_work_t {
+    const filter *f;
+    const int32_t *original_image;
+    int32_t *output_image;
+    int32_t width;
+    int32_t height;
+    int32_t max_threads;
+    pthread_barrier_t barrier;
+} common_work;
+
+
+typedef struct work_t
+{
+    common_work *common;
+    int32_t id;
+    parallel_method *method;
+} work;
+
+
+
+
+
 #endif
