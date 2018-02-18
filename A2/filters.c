@@ -12,6 +12,10 @@
  * -------------
 */
 
+#include <stdio.h>
+
+#include <assert.h>
+
 #include "filters.h"
 #include <pthread.h>
 
@@ -70,14 +74,47 @@ void normalize_pixel(int32_t *target, int32_t pixel_idx, int32_t smallest,
 }
 /*************** COMMON WORK ***********************/
 /* Process a single pixel and returns the value of processed pixel
- * TODO: you don't have to implement/use this function, but this is a hint
- * on how to reuse your code.
- * */
+ * 
+ * Returns: unbounded dot product of square matrix centered of the (col, row) element and
+ * the filter. 
+ * Marginal values are ignored and the target array is updated/
+ *
+ *        ________
+ *       |        |          ___________________________________
+ * Row ->|  x     |    ==   |________|__x_____|________|________|
+ *  1    |        |    ==               ^row * width + col = 10
+ *       |________|
+ *          ^
+ *          |
+ *          C
+ *          o 2
+ *          l
+ *       
+ *   1d = 2d.row * width + col
+ *   
+ *       */ 
+
 int32_t apply2d(const filter *f, const int32_t *original, int32_t *target,
         int32_t width, int32_t height,
         int row, int column)
 {
-    return 0;
+    int sum = 0;
+    int offset = (f->dimension - 1) / 2;
+    
+	//Convert from 2d to 1d index's and check bounds. Aggregate and return dot product of matrix.
+    for (int i = 0; i < f->dimension; i++){
+        for (int j = 0; j < f->dimension; j++){
+            int curr_x = column - offset + i;
+            int curr_y = row - offset + j;
+			//If 2d indicies are within 2d bounds
+            if ((0 <= curr_x && curr_x < width) && (0 <= curr_y && curr_y < height)){
+				//Write to pic array with 1d cordinates. 	
+                sum += original[curr_x + curr_y * width] * f->matrix[j + i * f->dimension];
+            }
+        }
+    }   
+	target[row * width + column] = sum;
+    return sum;
 }
 
 /*********SEQUENTIAL IMPLEMENTATIONS ***************/
@@ -87,6 +124,24 @@ void apply_filter2d(const filter *f,
         const int32_t *original, int32_t *target,
         int32_t width, int32_t height)
 {
+    int sum;
+    int max=-9999;
+    int min=9999;
+    
+    //Apply filter to every pixel in image.	
+    for(int y = 0; y < height; y++){
+        for (int x = 0; x < width; x++){
+            sum = apply2d(f, original, target, width, height, y, x);
+            if (sum > max){max = sum;}
+            if (sum < min){min = sum;}
+        }
+	}
+
+    assert(min != max);
+	//Normalize bitmap
+    for(int tar_byte = 0; tar_byte < width * height; tar_byte++){
+        normalize_pixel(target, tar_byte, min, max);
+    }
 }
 
 /****************** ROW/COLUMN SHARDING ************/

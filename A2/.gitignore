@@ -1,0 +1,10 @@
+*.idea
+CMakeLists.txt
+*cmake*
+out/
+pgm/
+tags
+very_big_*
+very_tall*
+../.idea/
+
