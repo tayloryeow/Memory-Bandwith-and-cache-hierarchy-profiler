@@ -173,6 +173,9 @@ void apply_filter2d(const filter *f,
     return;
 }
 
+int *min_arr;
+int *max_arr;
+
 /****************** ROW/COLUMN SHARDING ************/
 /* TODO: you don't have to implement this. It is just a suggestion for the
  * organization of the code.
@@ -217,7 +220,6 @@ void* sharding_work(void *pnt)
     int32_t width = w->common->width;
     int32_t height = w->common->height;
     int32_t max_threads = w->common->max_threads;
-    pthread_barrier_t barrier = w->common->barrier;
 
     int row_per_part = ((height + max_threads - 1) / max_threads);
 
@@ -230,7 +232,9 @@ void* sharding_work(void *pnt)
         for (int col = 0; col < width; col++) {
             //Discontinue if target is out of bounds of image.
             //Possible on last iteration
-
+            if (row * width + col >= width * height){
+                break;
+            }
 
             int pixel;
             pixel = apply2d(f, original, output_image, width, height, row, col);
@@ -239,14 +243,33 @@ void* sharding_work(void *pnt)
         }
     }
 
-    pthread_barrier_wait(&barrier);
+    min_arr[w->id] = min;
+    max_arr[w->id] = max;
+    int res = pthread_barrier_wait(&w->common->barrier);
+
+    if (res > 0){
+        perror("Barrier Wait");
+        exit(1);
+    }
+
+
+    int glob_min = 9999999;
+    int glob_max = -999999;
+    for (int thread = 0; thread < max_threads; thread++){
+        if (glob_min > min_arr[thread]){glob_min = min_arr[thread];}
+        if (glob_max < max_arr[thread]){glob_max = max_arr[thread];}
+    }
 
     //Loop over the output partition determined by Thread_id
     for (int row = start_row; row < start_row + row_per_part; row++) {
         for (int col = 0; col < width; col++) {
             //Discontinue if target is out of bounds of image.
             //Possible on last iteration
-            normalize_pixel(output_image, row*width + col, min, max);
+            if (row * width + col >= width * height){
+                break;
+            }
+
+            normalize_pixel(output_image, row*width + col, glob_min, glob_max);
         }
     }
 
@@ -273,6 +296,9 @@ void apply_filter2d_threaded(const filter *f,
         int32_t width, int32_t height,
         int32_t num_threads, parallel_method method, int32_t work_chunk)
 {
+    min_arr = malloc(sizeof(int) * num_threads);
+    max_arr = malloc(sizeof(int) * num_threads);
+
 
     //Instantiate Barrier
     pthread_barrier_t barrier;
@@ -301,6 +327,8 @@ void apply_filter2d_threaded(const filter *f,
     for(int t = 0; t < num_threads; t++) {
         pthread_join(threads[t], NULL);
     }
+    free(min_arr);
+    free(max_arr);
 
     //Sanity Check ouput
     for (int i = 0; i < height * width; i++){
@@ -309,5 +337,6 @@ void apply_filter2d_threaded(const filter *f,
             exit(1);
         }
     }
+    pthread_barrier_destroy(&barrier);
     return;
 }

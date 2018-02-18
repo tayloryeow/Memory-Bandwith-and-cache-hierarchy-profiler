@@ -27,8 +27,8 @@ debug: main pgm_creator
 
 parallel_test: pgm_creator main
 	./pgm_creator.out $(WIDTH) $(HEIGHT) 
-	./main.out -b1 -n1 -f1 -m2 -o outb1f1m2.pgm
-	./main.out -b2 -n1 -f1 -m2 -o outb1f1m2.pgm
+	./main.out -b1 -n10 -f1 -m2 -o outb1f1m2.pgm
+	./main.out -b2 -n10 -f1 -m2 -o outb1f1m2.pgm
 	./test_pgms.sh $(PMG_DIR) 2
 
 sequential_test: main pgm_creator

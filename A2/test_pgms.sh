@@ -21,7 +21,7 @@ do
 			    ./main.out -i ${input} -f${number} -m1 -o ${output}	
             fi
             if [[ $2 == 2 ]]; then
-                ./main.out -i ${input} -f${number} -n1 -m2 -o ${output}
+                ./main.out -i ${input} -f${number} -n10 -m2 -o ${output}
 		    fi
             done
 
