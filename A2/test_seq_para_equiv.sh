@@ -11,17 +11,16 @@ for num_threads in 1 4 16 64 256 1024
 do    
     echo "THREAD LOAD: "$num_threads
     #Different built in implementations
-    for preset in b1 b2
+    for preset in b1 #b2
     do
         #All 4 filters. 
         for filter in 1 2 3 4
         do     
             #Set/Create serialization comparison file
             base_out=${preset}-baseline-n${num_threads}-f${filter}.pgm
-            ./main.out -${preset} -m1 -f${filter} -o ${base_out}
-   
+            ./main.out -${preset} -m1 -f${filter} -o ${base_out} 
             #Create the parallel comparison file
-            for thread_modes in 2 3 4 5
+            for thread_modes in $(seq 1 $1);
             do 
                 #Create parallization output with the these parameters
                 out_name=${preset}-m${thread_modes}-f${filter}-n${num_threads}.pgm

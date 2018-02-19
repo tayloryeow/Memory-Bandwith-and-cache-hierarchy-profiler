@@ -437,6 +437,13 @@ void* sharding_work(void *pnt)
         }
     //Continue loop until Thread Pool has both Filtered the image and Normalized it
     } while (*w->method == WORK_QUEUE && !exit_flag);
+    //Sanity Check ouput
+    for (int i = 0; i < height * width; i++){
+        if (w->common->output_image[i] < 0 || w->common->output_image[i] > 255){
+            printf("unnormalized pmg outputted\n");
+            exit(1);
+        }
+    }
     return NULL;
 }
 
@@ -557,13 +564,6 @@ void apply_filter2d_threaded(const filter *f,
         free(work_q);
     }
 
-    //Sanity Check ouput
-    for (int i = 0; i < height * width; i++){
-        if (target[i] < 0 || target[i] > 255){
-            printf("unnormalized pmg outputted\n");
-            exit(1);
-        }
-    }
     pthread_barrier_destroy(&barrier);
     return;
 }

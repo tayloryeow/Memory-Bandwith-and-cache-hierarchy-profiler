@@ -9,10 +9,8 @@ HEIGHT=429496729
 
 PMG_DIR="pgm/"
 
-
 pgm_creator:
 	$(CC) $(GCC_OPT) pgm_creator.c pgm.c -o pgm_creator.out
-
 
 %.o: %.c
 	$(CC) -c -o $@ $< $(GCC_OPT)
@@ -20,17 +18,22 @@ pgm_creator:
 main: very_big_sample.o very_tall_sample.o main.c pgm.c filters.c
 	$(CC) $(GCC_OPT) main.c pgm.c filters.c very_big_sample.o very_tall_sample.o -o main.out -lpthread
 
-all: pgm_creator main sequential_test parallel_test
+all: pgm_creator main sequential_test simple_parallel_test work_queue_test
 
 debug: main pgm_creator 
 	gdb --tui --args main.out -f1 -b2 -m1 -o out.pgm
 
-parallel_test: pgm_creator main
+
+work_queue_test: pgm_creator main
+	./pgm_creator.out $(WIDTH) $(HEIGHT)
+	./test_seq_para_equiv.sh 5
+	./test_pgms.sh $(PMG_DIR) 2
+	./test_pgms.sh $(PMG_DIR) 3
+	./test_pgms.sh $(PMG_DIR) 4
+
+simple_parallel_test: pgm_creator main
 	./pgm_creator.out $(WIDTH) $(HEIGHT) 
-	./test_seq_para_equiv.sh	
-	para_convert
-	
-para_convert:
+	./test_seq_para_equiv.sh 4
 	./test_pgms.sh $(PMG_DIR) 2
 	./test_pgms.sh $(PMG_DIR) 3
 	./test_pgms.sh $(PMG_DIR) 4

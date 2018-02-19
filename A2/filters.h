@@ -105,8 +105,20 @@ typedef struct work_t
     parallel_method *method;
 } work;
 
+typedef struct work_queue_t
+{
+    double *jobs;
+    int index;
+    int last_idx;
+    int status;
+    pthread_mutex_t lock;
+} work_queue;
 
+int process_work_queue(const filter *f, const int32_t *original, int32_t *target,
+                       int32_t width, int32_t height,
+                       int row, int column);
 
+int dequeue_job(work_queue *q);
 
 
 #endif
