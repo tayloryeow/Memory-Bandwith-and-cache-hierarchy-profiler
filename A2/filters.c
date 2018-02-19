@@ -169,13 +169,55 @@ void apply_filter2d(const filter *f,
     return;
 }
 
+/*Global Array of min's and max's used for normalization*/
 int *min_arr;
 int *max_arr;
+work_queue *work_q;
+int g_chunk;
 
 /****************** ROW/COLUMN SHARDING ************/
 /*
  *
- */
+ * Example for 2 threads.
+ * Simple Matrix
+ *     0  1  2  3
+ * 0   0  1  2  3
+ * 1   4  5  6  7
+ * 2   8  9 10 11
+ * 3  12 13 14 15
+ *
+ * Iteration: 0  1   2   3   4   5   6   7
+ * _________|______________________________
+ * Row Sharded
+ *        T0: 0  1   2   3   4   5   6   7
+ *        T1: 8  9  10  11  12  13  14  15
+ * Column Sharded
+ * ----Column Major
+ *        T0: 0  4   8  12   1   5   9  13
+ *        T1: 2  6  10  14   3   7  11  15
+ * ----Row Major
+ *        T0: 0  1   4   5   8   9  12  13
+ *        T1: 2  3   6   7  10  11  14  15
+ *
+ * xy - cords
+ *Iteration: 0  1   2   3   4   5   6   7
+ * Row Sharded
+ *        T0: 00  01   02   03   10   11   12   13
+ *        T1: 20  21   22   23   30   31   32   33
+ * Column Sharded
+ * ----Column Major
+ *        T0: 00  10   20   30   01   11   21   31
+ *        T1: 02  12   22   32   03   13   23   33
+ * ----Row Major
+ *        T0: 00  01   10   11   20   21   30   31
+ *        T1: 02  03   12   13   22   23   32   33
+ *
+ *   NOTICE: Row Sharded and columned sharede colum major is a simple coordinate reflection.
+ *
+ *   Row Major col-shard and Row Sharded have the same ordering of dimensions. Ie outer dimension y, inner x.
+ *   Col-shar col Major is Outer dimension x inner dimension y.
+ *
+  */
 void* sharding_work(void *pnt)
 {
     /* Your algorithm is essentially:
@@ -189,6 +231,8 @@ void* sharding_work(void *pnt)
     assert(pnt != NULL);
     work * w = (work *) pnt;
 
+    enum loop_state {FILTER, NORMALIZE};
+
     const filter *f = w->common->f;
     const int32_t *original = w->common->original_image;
     int32_t *output_image = w->common->output_image;
@@ -196,121 +240,260 @@ void* sharding_work(void *pnt)
     int32_t height = w->common->height;
     int32_t max_threads = w->common->max_threads;
 
-    int partition;
-    int start_row;
-    int end_row;
-    int start_col;
-    int end_col;
+    int num_outer_dim;
+    int num_inner_dim;
+    int outer_idx_start;
+    int outer_idx_end;
+    int inner_idx_start;
+    int inner_idx_end;
 
-    if (*w->method == SHARDED_ROWS){
-        /*  ______
-         * |______|  T0 -> 0 - width : height = 1
-         * |______|  T1 -> width - 2width: height = 1
-         * |______|  T2 -> 2width - 3width: height = 1
-         * |______|  T3 -> 3width - 4width:
-         *  While the partitions should technically be from 0 - width - 1. As the width element should be part
-         *  of the second shard. However this would force T0's right most edges to be out of
-         *
-         * */
+    int part_start;
+    int part_bounds;
 
-        partition = ((height + max_threads - 1) / max_threads);
-        start_row = partition * w->id;
-        end_row = start_row + partition;
-        start_col = 0;
-        end_col = width;
-    }
-    else if (*w->method == SHARDED_COLUMNS_COLUMN_MAJOR ||
-             *w->method == SHARDED_COLUMNS_ROW_MAJOR){
-        partition = (int)((width + max_threads - 1)/max_threads);
-        start_row = 0;
-        end_row = height;
-        start_col = w->id * partition;
-        end_col = start_col + partition;
+    int job_idx = -1;
+    int state = FILTER;
+
+    int glob_min = 9999999;
+    int glob_max = -9999999;
+
+    int exit_flag = 0;
+
+    do {
+        //Cut the partition. Each end-start pair represents bound of partition allocation along an axis
+        switch ((int) *w->method){
+            case SHARDED_ROWS:
+                /*Outer dimension: x-axis. Inner Dimension: y-axis.*/
+                num_outer_dim = (int) ((height + max_threads - 1) / max_threads);
+                num_inner_dim = width;
+                outer_idx_start = num_outer_dim * w->id;
+                inner_idx_start = 0;
+
+                part_bounds = height;
+                part_start = outer_idx_start;
+                break;
+            case SHARDED_COLUMNS_COLUMN_MAJOR:
+                /*Outer dimension: x-axis. Inner Dimension: y-axis.*/
+                num_outer_dim = (int)((width + max_threads - 1)/max_threads);
+                num_inner_dim = height;
+                outer_idx_start = num_outer_dim * w->id;
+                inner_idx_start = 0;
+
+                part_bounds = width;
+                part_start = outer_idx_start;
+                break;
+
+            case SHARDED_COLUMNS_ROW_MAJOR:
+                num_outer_dim = height;
+                num_inner_dim = (int) ((width + max_threads - 1) / max_threads);
+                outer_idx_start = 0;
+                inner_idx_start = w->id * num_inner_dim;
+
+                part_bounds = width;
+                part_start = inner_idx_start;
+                break;
+            case WORK_QUEUE:
+                num_outer_dim = g_chunk;
+                num_inner_dim = g_chunk;
+                //Get 1d job idx and translate that to 2d cordinate
+                job_idx = dequeue_job(work_q);
+                inner_idx_start = job_idx % width;
+                outer_idx_start = job_idx / width;
+
+                //Shortcircuit filter loop is workqueue is empty
+                if (job_idx < 0){
+                    part_start = 0;
+                    part_bounds = part_start - 1;
+                }else{
+                    part_start = 0;
+                    part_bounds = part_start + 1;
+                }
+                break;
+            default:
+                exit(1);
+        }
+
+
+        //Disqualify bad partitions - Shortcircuit work for-loops without affecting barrier/syncro operations
+        if (part_start >= part_bounds){
+            outer_idx_end = outer_idx_start;
+            inner_idx_end = inner_idx_start;
+        }
+        else{
+            outer_idx_end = outer_idx_start + num_outer_dim;
+            inner_idx_end = inner_idx_start + num_inner_dim;
+        }
+
+        int min = 999999999;
+        int max = -999999999;
+
+        //Loop over every point of the output array
+        //State = 0. Filter it
+        //state = 1. Normalize it
+        for ( ; state < 2; state++) {
+            //Loop over the outside dimension
+            for (int outer_dim = outer_idx_start; outer_dim < outer_idx_end; outer_dim++) {
+                for (int inner_dim = inner_idx_start; inner_dim < inner_idx_end; inner_dim++) {
+                    int pixel;
+                    int tar_col;
+                    int tar_row;
+
+                    //Translate loop indicies to cordinates coresponding to original imge
+                    switch ((int) *w->method) {
+                        case WORK_QUEUE:
+
+                        case SHARDED_ROWS:
+                        case SHARDED_COLUMNS_ROW_MAJOR:
+                            tar_row = outer_dim;
+                            tar_col = inner_dim;
+                            break;
+                        case SHARDED_COLUMNS_COLUMN_MAJOR:
+                            /*Reflects the direction of iteration to iterate over columns instead of row*/
+                            tar_row = inner_dim;
+                            tar_col = outer_dim;
+                            break;
+                        default:
+                            exit(1);
+                    }
+
+
+                    //Discard bad target elements: Only possible on last iteration
+                    if (tar_row * width + tar_col >= width * height) { break; }
+
+                    switch (state) {
+                        case FILTER:
+                            pixel = apply2d(f, original, output_image, width, height, tar_row, tar_col);
+                            (pixel > max) ? max = pixel : max;
+                            (pixel < min) ? min = pixel : min;
+                            break;
+                        case NORMALIZE:
+                            normalize_pixel(output_image, tar_row * width + tar_col, glob_min, glob_max);
+                            break;
+                    }
+                }
+            }/*End Over every pixel loop*/
+
+            //Skip Normalization step on method Work Queue.
+            // WQ only processes partitions until all are processed
+            //Normalization is similarily partitioned
+            if (*w->method != WORK_QUEUE){
+                //Update extrema data needed for by other threads and wait until everyone's finished
+                min_arr[w->id] = min;
+                max_arr[w->id] = max;
+                glob_min = 999999;
+                glob_max = -999999;
+                pthread_barrier_wait(&w->common->barrier);
+                //Obtain the extrema across all the threads
+                for (int thread = 0; thread < max_threads; thread++) {
+                    (glob_min > min_arr[thread]) ? glob_min = min_arr[thread] : glob_min;
+                    (glob_max < max_arr[thread]) ? glob_max = max_arr[thread] : glob_max;
+                }
+
+            }
+            //Work Queue can't normalize immediately so short circuit loop
+            //by shifting for loop variable state: immeditately reset state
+            //outside loop so next iteration of loop behaves sensibly
+            else {
+                break;
+            }
+        }/*End Filter/Normalization loop*/
+
+        if (*w->method == WORK_QUEUE) {
+            //Filtering and jobs left
+            if (state == FILTER && job_idx >= 0) {
+                if (min_arr[w->id] > min) { min_arr[w->id] = min; }
+                if (max_arr[w->id] < max) { max_arr[w->id] = max; }
+                state = FILTER;
+            }
+            //Finished Filtering - wait on other threads and get extrema
+            else if (state == FILTER && job_idx < 0){
+                //Get Local and
+                pthread_barrier_wait(&w->common->barrier);
+                work_q->index = 0;
+                pthread_barrier_wait(&w->common->barrier);
+
+                //Set Global Min and Max nothing changes these values after this line.
+                glob_min = 999999;
+                glob_max = -999999;
+                //Obtain the extrema across all the threads
+                for (int thread = 0; thread < max_threads; thread++) {
+                    (glob_min > min_arr[thread]) ? glob_min = min_arr[thread] : glob_min;
+                    (glob_max < max_arr[thread]) ? glob_max = max_arr[thread] : glob_max;
+                }
+                state = NORMALIZE;
+            }
+            //Normal Normalizing processing
+            else if (state == NORMALIZE && job_idx >= 0) {
+                state = NORMALIZE;
+            }
+            //Finished Normalizing Finished Filtering.
+            else if (state == NORMALIZE && job_idx < 0){
+                state = 3;
+                exit_flag = 1;
+            }
+            else {
+                perror ("Unexpected failure");
+                return NULL;
+            }
+        }
+    //Continue loop until Thread Pool has both Filtered the image and Normalized it
+    } while (*w->method == WORK_QUEUE && !exit_flag);
+    return NULL;
+}
+
+/**
+ *
+ * @param q struct describing a shared int representing dequeued job number
+ * @return 1d coordinate of top left index of this job partition. -1 if empty
+ */
+int dequeue_job(work_queue *q)
+{
+    int temp;
+    pthread_mutex_lock(&q->lock);
+    temp = q->jobs[q->index];
+    if (q->index > q->last_idx){
+        temp = -1;
     }
     else {
-        exit(1);
+        q->index++;
     }
+    pthread_mutex_unlock(&q->lock);
 
-    int min = 999999999;
-    int max = -999999999;
-
-    if (*w->method == SHARDED_ROWS || *w->method == SHARDED_COLUMNS_ROW_MAJOR) {
-        //Loop over the output partition determined by Thread_id
-        for (int row = start_row; row < end_row; row++) {
-            for (int col = start_col; col < end_col; col++) {
-                //Discontinue if target is out of bounds of image.
-                //Possible on last iteration
-                if (row >= height || col >= width) { break; }
-                int pixel = apply2d(f, original, output_image, width, height, row, col);
-                if (pixel > max) { max = pixel; }
-                if (pixel < min) { min = pixel; }
-            }
-        }
-    }
-    else{
-        //Loop through the pixel array by column first
-        for (int col = start_col; col < end_col; col++) {
-            for (int row = start_row; row < end_row; row++) {
-                //Discontinue if target is out of bounds of image.
-                //Possible on last iteration
-                if (row >= height || col >= width) { break; }
-                int pixel = apply2d(f, original, output_image, width, height, row, col);
-                if (pixel > max) { max = pixel; }
-                if (pixel < min) { min = pixel; }
-            }
-        }
-    }
-
-
-    min_arr[w->id] = min;
-    max_arr[w->id] = max;
-    int res = pthread_barrier_wait(&w->common->barrier);
-    if (res > 0){
-        perror("Barrier Wait");
-        exit(1);
-    }
-
-    //Obtain the shared max/min
-    int glob_min = 9999999;
-    int glob_max = -999999;
-    for (int thread = 0; thread < max_threads; thread++){
-        if (glob_min > min_arr[thread]){glob_min = min_arr[thread];}
-        if (glob_max < max_arr[thread]){glob_max = max_arr[thread];}
-    }
-
-    if (*w->method == SHARDED_ROWS || *w->method == SHARDED_COLUMNS_ROW_MAJOR) {
-        //Loop over the output partition determined by Thread_id
-        for (int row = start_row; row < end_row; row++) {
-            for (int col = start_col; col < end_col; col++) {
-                //Discontinue if target is out of bounds of image.
-                //Possible on last iteration
-                if (row >= height || col >= width) { break; }
-                normalize_pixel(output_image, row*width + col, glob_min, glob_max);
-            }
-        }
-    }
-    else{
-        //Loop through the pixel array by column first
-        for (int col = start_col; col < end_col; col++) {
-            for (int row = start_row; row < end_row; row++) {
-                //Discontinue if target is out of bounds of image.
-                //Possible on last iteration
-                if (row >= height || col >= width) { break; }
-                normalize_pixel(output_image, row*width + col, glob_min, glob_max);
-            }
-        }
-    }
-
-    return NULL;
+    return temp;
 }
 
 /***************** WORK QUEUE *******************/
 /* TODO: you don't have to implement this. It is just a suggestion for the
  * organization of the code.
+ * You will now implement a Work Pool implementation using pthreads.
+ * This is specified as the WORK_QUEUE method number. In the WORK_QUEUE method,
+ * the image is divided in square tiles of size chunk x chunk (where chunk is the argument
+ * described as the work chunk in part 1). All the tiles (work chunks) are statically placed
+ * in a queue at the start of the program. A task has the granularity of one tile. That is, each
+ * thread will take one tile at a time from the queue and process it before proceeding to
+ * grab another tile. You must implement this abstraction efficiently.
+
+    Note: Your implementation must ensure that accesses to shared resources are synchronized.
+    Keep in mind that although your program may be run in sequential mode (that is, using a work pool with
+    1 thread), you should still use locking where necessary.
+
+    This part consists of implementing the remaining part of the function apply_filter2d_threaded in filters.c,
+    in other words, you should handle the case where method is WORK_QUEUE.
  */
-void* queue_work(void *work)
-{
-    return NULL;
+
+//Fills work_q 1d index of the top left index of sqsuare partitions
+void queue_work(void *pntr)  {
+    common_work *w = (common_work *) pntr;
+
+    int last_idx = 0;
+    for (int j_y = 0; j_y < (w->width+g_chunk-1)/g_chunk ; j_y++) {
+        for (int j_x = 0; j_x < w->height/g_chunk; j_x++) {
+            double value = (j_y * g_chunk * w->width) + j_x * g_chunk;
+            int ind = j_y * w->width/g_chunk + j_x;
+            work_q->jobs[ind] = value;
+            last_idx = ind;
+        }
+    }
+    work_q->last_idx = last_idx;
 }
 
 
@@ -324,10 +507,6 @@ void apply_filter2d_threaded(const filter *f,
         int32_t width, int32_t height,
         int32_t num_threads, parallel_method method, int32_t work_chunk)
 {
-    min_arr = malloc(sizeof(int) * num_threads);
-    max_arr = malloc(sizeof(int) * num_threads);
-
-
     //Instantiate Barrier
     pthread_barrier_t barrier;
     unsigned count = num_threads;
@@ -337,10 +516,26 @@ void apply_filter2d_threaded(const filter *f,
         exit(1);
     }
 
-    //Create N Threads
+    //Create thread infromation arrays
     pthread_t threads[num_threads];
     work thread_info[num_threads];
     common_work work_info = {f, original, target, width, height, num_threads, barrier};
+
+    //Initialize Global Variables
+    min_arr = malloc(sizeof(int) * num_threads);
+    max_arr = malloc(sizeof(int) * num_threads);
+
+
+    if (method == WORK_QUEUE) {
+        g_chunk = work_chunk;
+        work_q = malloc(sizeof(work_queue));
+        work_q->jobs = malloc(sizeof(int) * width/g_chunk * width/g_chunk);
+        work_q->index = 0;
+        pthread_mutex_init(&(work_q->lock), NULL);
+        queue_work(&work_info);
+    }
+
+    //Create N Threads
     for (int t = 0; t < num_threads; t++){
         work w = {&work_info, t, &method};
         thread_info[t] = w;
@@ -357,6 +552,10 @@ void apply_filter2d_threaded(const filter *f,
     }
     free(min_arr);
     free(max_arr);
+    if (method == WORK_QUEUE) {
+        free(work_q->jobs);
+        free(work_q);
+    }
 
     //Sanity Check ouput
     for (int i = 0; i < height * width; i++){

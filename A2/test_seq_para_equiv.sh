@@ -21,11 +21,18 @@ do
             ./main.out -${preset} -m1 -f${filter} -o ${base_out}
    
             #Create the parallel comparison file
-            for thread_modes in 2 3 4
+            for thread_modes in 2 3 4 5
             do 
                 #Create parallization output with the these parameters
-                out_name=${preset}-m${num_threads}-f${filter}-n${num_threads}.pgm
-                ./main.out -${preset} -n${num_threads} -m${thread_modes} -f${filter} -o ${out_name}
+                out_name=${preset}-m${thread_modes}-f${filter}-n${num_threads}.pgm
+
+                if [ ${thread_modes} -eq 5 ] 
+                then                  
+                    ./main.out -${preset} -n${num_threads} -m5 -c64 -f${filter} -o ${out_name}
+                else
+                    ./main.out -${preset} -n${num_threads} -m${thread_modes} -f${filter} -o ${out_name}
+                fi
+
 
                 #Compare Files
                 result=$(diff ${base_out} ${out_name})
@@ -43,6 +50,10 @@ do
             rm ${base_out}
         done
     done
+    if [ $total_err -eq 1 ]
+    then
+        break
+    fi    
 done
 
 if [ $total_err -eq 0 ]
