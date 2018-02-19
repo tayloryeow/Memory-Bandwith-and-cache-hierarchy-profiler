@@ -117,7 +117,6 @@ int32_t apply2d(const filter *f, const int32_t *original, int32_t *target,
 /* for (Every pixel):
  *     filter (dot_product) original
  *
- *
  * Two Dimensional index cords to One Dimensional index
           1d = 2d.row * width + col
  *        ________
@@ -126,10 +125,7 @@ int32_t apply2d(const filter *f, const int32_t *original, int32_t *target,
  *  1    |        |    ==               ^row * width + col = 10
  *       |________|
  *          ^
- *          |
- *          C
- *          o 2
- *          l
+ *          |Col = 2
  */
 void apply_filter2d(const filter *f, 
         const int32_t *original, int32_t *target,
@@ -177,21 +173,8 @@ int *min_arr;
 int *max_arr;
 
 /****************** ROW/COLUMN SHARDING ************/
-/* TODO: you don't have to implement this. It is just a suggestion for the
- * organization of the code.
- */
-
-/* Recall that, once the filter is applied, all threads need to wait for
- * each other to finish before computing the smallest/largets elements
- * in the resulting matrix. To accomplish that, we declare a barrier variable:
- *      pthread_barrier_t barrier;
- * And then initialize it specifying the number of threads that need to call
- * wait() on it:
- *      pthread_barrier_init(&barrier, NULL, num_threads);
- * Once a thread has finished applying the filter, it waits for the other
- * threads by calling:
- *      pthread_barrier_wait(&barrier);
- * This function only returns after *num_threads* threads have called it.
+/*
+ *
  */
 void* sharding_work(void *pnt)
 {
@@ -201,16 +184,8 @@ void* sharding_work(void *pnt)
      *  3- Calculate global smallest/largest elements on the resulting image
      *  4- Scale back the pixels of the image. For the non work queue
      *      implementations, each thread should scale the same pixels
-     *      that it worked on step 1.
-       ______
-    * |______|  T0 -> 0 - width : height = 1
-    * |______|  T1 -> width - 2width: height = 1
-    * |______|  T2 -> 2width - 3width: height = 1
-    * |______|  T3 -> 3width - 4width:
-    *  While the partitions should technically be from 0 - width - 1. As the width element should be part
-    *  of the second shard. However this would force T0's right most edges to be out of
-    *
-    * */
+     *      that it worked on step 1.*/
+
     assert(pnt != NULL);
     work * w = (work *) pnt;
 
@@ -228,19 +203,29 @@ void* sharding_work(void *pnt)
     int end_col;
 
     if (*w->method == SHARDED_ROWS){
+        /*  ______
+         * |______|  T0 -> 0 - width : height = 1
+         * |______|  T1 -> width - 2width: height = 1
+         * |______|  T2 -> 2width - 3width: height = 1
+         * |______|  T3 -> 3width - 4width:
+         *  While the partitions should technically be from 0 - width - 1. As the width element should be part
+         *  of the second shard. However this would force T0's right most edges to be out of
+         *
+         * */
+
         partition = ((height + max_threads - 1) / max_threads);
         start_row = partition * w->id;
-        start_col = 0;
         end_row = start_row + partition;
+        start_col = 0;
         end_col = width;
     }
     else if (*w->method == SHARDED_COLUMNS_COLUMN_MAJOR ||
              *w->method == SHARDED_COLUMNS_ROW_MAJOR){
-        partition = width/max_threads;
-        start_col = w->id * partition;
-        end_col = start_col + partition;
+        partition = (int)((width + max_threads - 1)/max_threads);
         start_row = 0;
         end_row = height;
+        start_col = w->id * partition;
+        end_col = start_col + partition;
     }
     else {
         exit(1);
@@ -249,13 +234,13 @@ void* sharding_work(void *pnt)
     int min = 999999999;
     int max = -999999999;
 
-    if (*w->method != SHARDED_COLUMNS_COLUMN_MAJOR) {
+    if (*w->method == SHARDED_ROWS || *w->method == SHARDED_COLUMNS_ROW_MAJOR) {
         //Loop over the output partition determined by Thread_id
         for (int row = start_row; row < end_row; row++) {
             for (int col = start_col; col < end_col; col++) {
                 //Discontinue if target is out of bounds of image.
                 //Possible on last iteration
-                if (row * width + col >= width * height) { break; }
+                if (row >= height || col >= width) { break; }
                 int pixel = apply2d(f, original, output_image, width, height, row, col);
                 if (pixel > max) { max = pixel; }
                 if (pixel < min) { min = pixel; }
@@ -268,7 +253,7 @@ void* sharding_work(void *pnt)
             for (int row = start_row; row < end_row; row++) {
                 //Discontinue if target is out of bounds of image.
                 //Possible on last iteration
-                if (row * width + col >= width * height) { break; }
+                if (row >= height || col >= width) { break; }
                 int pixel = apply2d(f, original, output_image, width, height, row, col);
                 if (pixel > max) { max = pixel; }
                 if (pixel < min) { min = pixel; }
@@ -293,15 +278,26 @@ void* sharding_work(void *pnt)
         if (glob_max < max_arr[thread]){glob_max = max_arr[thread];}
     }
 
-    //Loop over the output partition determined by Thread_id
-    for (int row = start_row; row < end_row; row++) {
-        for (int col = start_col; col < end_col; col++) {
-            //Discontinue if target is out of bounds of image.
-            //Possible on last iteration
-            if (row * width + col >= width * height){
-                break;
+    if (*w->method == SHARDED_ROWS || *w->method == SHARDED_COLUMNS_ROW_MAJOR) {
+        //Loop over the output partition determined by Thread_id
+        for (int row = start_row; row < end_row; row++) {
+            for (int col = start_col; col < end_col; col++) {
+                //Discontinue if target is out of bounds of image.
+                //Possible on last iteration
+                if (row >= height || col >= width) { break; }
+                normalize_pixel(output_image, row*width + col, glob_min, glob_max);
             }
-            normalize_pixel(output_image, row*width + col, glob_min, glob_max);
+        }
+    }
+    else{
+        //Loop through the pixel array by column first
+        for (int col = start_col; col < end_col; col++) {
+            for (int row = start_row; row < end_row; row++) {
+                //Discontinue if target is out of bounds of image.
+                //Possible on last iteration
+                if (row >= height || col >= width) { break; }
+                normalize_pixel(output_image, row*width + col, glob_min, glob_max);
+            }
         }
     }
 
