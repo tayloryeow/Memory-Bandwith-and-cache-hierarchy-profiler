@@ -5,38 +5,55 @@ rm b1-*.pgm
 
 total_err=0
 
+#Iterate through all parameter permutations with progressively larger thread_numbers
+#Test the mode = 1 type output (sequential) against the parall output (mode = 2|3|4)
 for num_threads in 1 4 16 64 256 1024
 do    
-
-    ./main.out -b1 -m1 -f4 -o b1-baseline-n${num_threads}.pgm
-    ./main.out -b1 -n${num_threads} -m2 -f4 -o b1-m2-f4-n${num_threads}.pgm
-    ./main.out -b1 -n${num_threads} -m3 -f4 -o b1-m3-f4-n${num_threads}.pgm
-    ./main.out -b1 -n${num_threads} -m4 -f4 -o b1-m4-f4-n${num_threads}.pgm
-    ./main.out -b2 -m1 -f4 -o b2-baseline-n${num_threads}.pgm
-    ./main.out -b2 -n${num_threads} -m2 -f4 -o b2-m2-f4-n${num_threads}.pgm
-    ./main.out -b2 -n${num_threads} -m3 -f4 -o b2-m3-f4-n${num_threads}.pgm
-    ./main.out -b2 -n${num_threads} -m4 -f4 -o b2-m4-f4-n${num_threads}.pgm
-    list="m2-f4-n${num_threads}.pgm m3-f4-n${num_threads}.pgm m4-f4-n${num_threads}.pgm"
-    echo "list:" $list
+    echo "THREAD LOAD: "$num_threads
+    #Different built in implementations
     for preset in b1 b2
     do
-        for i in $list
-        do
-            result=$(diff ${preset}-baseline-n${num_threads}.pgm ${preset}-$i) 
-            if [ $? -eq 0 ]
-            then 
-                echo $i" Parallelization on "${preset}" (No filter) passes *"
-            else
-                total_err=$((total_err+1))
-                echo $i" Parallelization on "${preset}" (No filter) FAILS  X"
-            fi
+        #All 4 filters. 
+        for filter in 1 2 3 4
+        do     
+            #Set/Create serialization comparison file
+            base_out=${preset}-baseline-n${num_threads}-f${filter}.pgm
+            ./main.out -${preset} -m1 -f${filter} -o ${base_out}
+   
+            #Create the parallel comparison file
+            for thread_modes in 2 3 4
+            do 
+                #Create parallization output with the these parameters
+                out_name=${preset}-m${num_threads}-f${filter}-n${num_threads}.pgm
+                ./main.out -${preset} -n${num_threads} -m${thread_modes} -f${filter} -o ${out_name}
+
+                #Compare Files
+                result=$(diff ${base_out} ${out_name})
+                if [ $? -eq 0 ]
+                then 
+                    echo "TEST: Apply "$num_threads" thread(s) on "$preset" using filter="$filter" | m:"$thread_modes" passes *"
+                else
+                    total_err=1
+                    echo "TEST: Apply "$num_threads" thread(s) on "$preset" using filter="$filter" | m:"$thread_modes" FAILS X"
+                fi
+
+                #remove parralel test file
+                rm ${out_name}
+            done
+            rm ${base_out}
         done
     done
 done
 
 if [ $total_err -eq 0 ]
 then
-    echo "FAIL - Parallel implementation is not equivalent"
+    echo "***************************************************************************************"
+    echo "* ALL TESTS PASSING * Parallel implementation is equivalent with sequential implemntation"
+    echo "*********************"
+else
+    echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    echo "X FAIL X Parallel implementation is not equivalent"
+    echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 fi
 exit $total_err
 
