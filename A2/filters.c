@@ -221,38 +221,71 @@ void* sharding_work(void *pnt)
     int32_t height = w->common->height;
     int32_t max_threads = w->common->max_threads;
 
-    int row_per_part = ((height + max_threads - 1) / max_threads);
+    int partition;
+    int start_row;
+    int end_row;
+    int start_col;
+    int end_col;
 
-    int start_row = row_per_part * w->id;
+    if (*w->method == SHARDED_ROWS){
+        partition = ((height + max_threads - 1) / max_threads);
+        start_row = partition * w->id;
+        start_col = 0;
+        end_row = start_row + partition;
+        end_col = width;
+    }
+    else if (*w->method == SHARDED_COLUMNS_COLUMN_MAJOR ||
+             *w->method == SHARDED_COLUMNS_ROW_MAJOR){
+        partition = width/max_threads;
+        start_col = w->id * partition;
+        end_col = start_col + partition;
+        start_row = 0;
+        end_row = height;
+    }
+    else {
+        exit(1);
+    }
+
     int min = 999999999;
     int max = -999999999;
 
-    //Loop over the output partition determined by Thread_id
-    for (int row = start_row; row < start_row + row_per_part; row++) {
-        for (int col = 0; col < width; col++) {
-            //Discontinue if target is out of bounds of image.
-            //Possible on last iteration
-            if (row * width + col >= width * height){
-                break;
+    if (*w->method != SHARDED_COLUMNS_COLUMN_MAJOR) {
+        //Loop over the output partition determined by Thread_id
+        for (int row = start_row; row < end_row; row++) {
+            for (int col = start_col; col < end_col; col++) {
+                //Discontinue if target is out of bounds of image.
+                //Possible on last iteration
+                if (row * width + col >= width * height) { break; }
+                int pixel = apply2d(f, original, output_image, width, height, row, col);
+                if (pixel > max) { max = pixel; }
+                if (pixel < min) { min = pixel; }
             }
-
-            int pixel;
-            pixel = apply2d(f, original, output_image, width, height, row, col);
-            if (pixel > max){max = pixel;}
-            if (pixel < min){min = pixel;}
         }
     }
+    else{
+        //Loop through the pixel array by column first
+        for (int col = start_col; col < end_col; col++) {
+            for (int row = start_row; row < end_row; row++) {
+                //Discontinue if target is out of bounds of image.
+                //Possible on last iteration
+                if (row * width + col >= width * height) { break; }
+                int pixel = apply2d(f, original, output_image, width, height, row, col);
+                if (pixel > max) { max = pixel; }
+                if (pixel < min) { min = pixel; }
+            }
+        }
+    }
+
 
     min_arr[w->id] = min;
     max_arr[w->id] = max;
     int res = pthread_barrier_wait(&w->common->barrier);
-
     if (res > 0){
         perror("Barrier Wait");
         exit(1);
     }
 
-
+    //Obtain the shared max/min
     int glob_min = 9999999;
     int glob_max = -999999;
     for (int thread = 0; thread < max_threads; thread++){
@@ -261,14 +294,13 @@ void* sharding_work(void *pnt)
     }
 
     //Loop over the output partition determined by Thread_id
-    for (int row = start_row; row < start_row + row_per_part; row++) {
-        for (int col = 0; col < width; col++) {
+    for (int row = start_row; row < end_row; row++) {
+        for (int col = start_col; col < end_col; col++) {
             //Discontinue if target is out of bounds of image.
             //Possible on last iteration
             if (row * width + col >= width * height){
                 break;
             }
-
             normalize_pixel(output_image, row*width + col, glob_min, glob_max);
         }
     }
@@ -314,7 +346,7 @@ void apply_filter2d_threaded(const filter *f,
     work thread_info[num_threads];
     common_work work_info = {f, original, target, width, height, num_threads, barrier};
     for (int t = 0; t < num_threads; t++){
-        work w = {&work_info, t};
+        work w = {&work_info, t, &method};
         thread_info[t] = w;
         retval = pthread_create(&threads[t], NULL, sharding_work, &thread_info[t]);
         if (retval){

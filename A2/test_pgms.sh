@@ -20,10 +20,8 @@ do
             if [[ $2 == 1 ]]; then
 			    ./main.out -i ${input} -f${number} -m1 -o ${output}	
             fi
-            if [[ $2 == 2 ]]; then
-                ./main.out -i ${input} -f${number} -n10 -m2 -o ${output}
-		    fi
-            done
+            ./main.out -i ${input} -f${number} -n10 -m$2 -o ${output}
+		    done
 
 	else
 		echo "Invalid .pgm -> "$pgm_dir$i

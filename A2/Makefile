@@ -28,8 +28,33 @@ debug: main pgm_creator
 parallel_test: pgm_creator main
 	./pgm_creator.out $(WIDTH) $(HEIGHT) 
 	./main.out -b1 -n10 -f1 -m2 -o outb1f1m2.pgm
-	./main.out -b2 -n10 -f1 -m2 -o outb1f1m2.pgm
+	./main.out -b2 -n10 -f1 -m2 -o outb2f1m2.pgm
+	./main.out -b1 -n10 -f2 -m2 -o outb1f2m2.pgm
+	./main.out -b2 -n10 -f2 -m2 -o outb2f2m2.pgm
+	./main.out -b1 -n10 -f3 -m2 -o outb1f3m2.pgm
+	./main.out -b2 -n10 -f3 -m2 -o outb2f3m2.pgm
+	./main.out -b1 -n10 -f4 -m2 -o outb1f4m2.pgm
+	./main.out -b2 -n10 -f4 -m2 -o outb2f4m2.pgm
 	./test_pgms.sh $(PMG_DIR) 2
+	./main.out -b1 -n10 -f1 -m3 -o outb1f1m3.pgm
+	./main.out -b2 -n10 -f1 -m3 -o outb2f1m3.pgm
+	./main.out -b1 -n10 -f2 -m3 -o outb1f2m3.pgm
+	./main.out -b2 -n10 -f2 -m3 -o outb2f2m3.pgm
+	./main.out -b1 -n10 -f3 -m3 -o outb1f3m3.pgm
+	./main.out -b2 -n10 -f3 -m3 -o outb2f3m3.pgm
+	./main.out -b1 -n10 -f4 -m3 -o outb1f4m3.pgm
+	./main.out -b2 -n10 -f4 -m3 -o outb2f4m3.pgm	
+	./test_pgms.sh $(PMG_DIR) 3
+	./main.out -b1 -n10 -f1 -m4 -o outb1f1m4.pgm
+	./main.out -b2 -n10 -f1 -m4 -o outb2f1m4.pgm
+	./main.out -b1 -n10 -f2 -m4 -o outb1f2m4.pgm
+	./main.out -b2 -n10 -f2 -m4 -o outb2f2m4.pgm
+	./main.out -b1 -n10 -f3 -m4 -o outb1f3m4.pgm
+	./main.out -b2 -n10 -f3 -m4 -o outb2f3m4.pgm
+	./main.out -b1 -n10 -f4 -m4 -o outb1f4m4.pgm
+	./main.out -b2 -n10 -f4 -m4 -o outb2f4m4.pgm	
+
+	./test_pgms.sh $(PMG_DIR) 4
 
 sequential_test: main pgm_creator
 	./pgm_creator.out $(WIDTH) $(HEIGHT)
@@ -37,7 +62,7 @@ sequential_test: main pgm_creator
 	./main.out -b2 -f1 -m1 -o outb2f1m1.pgm
 	./test_pgms.sh $(PMG_DIR) 1
 
-cleanpgm:
+c4eanpgm:
 	rm *.pgm	
 
 clean:
